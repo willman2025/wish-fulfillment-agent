@@ -1,0 +1,45 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #f6f1ea;
+  --bg-deep: #efe6da;
+  --surface: #fffdf9;
+  --ink: #2c2419;
+  --ink-soft: #6b5e4e;
+  --accent: #c45c26;
+  --accent-soft: #f0d5c4;
+  --coach: #3d5a45;
+  --coach-bg: #e8f0ea;
+  --user-bg: #fff;
+  --border: #e4d8c8;
+  --shadow: 0 8px 28px rgba(44, 36, 25, 0.08);
+  --radius: 16px;
+  font-family: 'Noto Sans SC', system-ui, sans-serif;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100%;
+  background:
+    radial-gradient(ellipse at top left, #fce8d8 0%, transparent 45%),
+    radial-gradient(ellipse at bottom right, #dde8df 0%, transparent 40%),
+    var(--bg);
+}
+
+button,
+input {
+  font: inherit;
+}
