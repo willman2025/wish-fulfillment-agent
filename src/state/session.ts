@@ -13,7 +13,7 @@ function uid(prefix: string): string {
 
 export function createInitialState(): SessionState {
   const opening =
-    '嗨，我是你的「拉回正轨」小教练。\n\n失业或空窗期时，日子容易散掉——不是你不行，只是节奏断了。\n\n今天我们只做一件事：找出你想重新靠近的「一个方向」。不用很大，哪怕是「想重新有点精神」「想动起来」都行。\n\n你现在心里，有没有一个隐隐想拉回来的方向？'
+    '嗨，我是你的愿望教练。\n\n先随便许一个愿，可以很模糊；我们慢慢聊清楚，再给你一个小但认真的第一步。\n\n你心里现在有什么想靠近的事吗？不用完整，一句话就好。'
 
   return {
     phase: 'clarifying',
@@ -29,9 +29,12 @@ export function createInitialState(): SessionState {
       },
     ],
     events: appendEvent([], 'session_started'),
-    clarifyingStep: 'awaiting_direction',
+    clarifyingStep: 'wishing',
     draftWish: '',
     draftDoneLooksLike: '',
+    exploreUserTurns: 0,
+    draftBehavior: '',
+    draftAnchor: '',
   }
 }
 
@@ -43,7 +46,18 @@ export function loadState(): SessionState {
     if (!parsed.phase || !Array.isArray(parsed.messages)) {
       return createInitialState()
     }
-    return parsed
+    // Migrate older persisted shapes
+    const validSteps = new Set(['wishing', 'exploring', 'confirming', 'done'])
+    if (!validSteps.has(parsed.clarifyingStep)) {
+      return createInitialState()
+    }
+    return {
+      ...createInitialState(),
+      ...parsed,
+      exploreUserTurns: parsed.exploreUserTurns ?? 0,
+      draftBehavior: parsed.draftBehavior ?? '',
+      draftAnchor: parsed.draftAnchor ?? '',
+    }
   } catch {
     return createInitialState()
   }
@@ -82,11 +96,97 @@ export function addMessage(
   }
 }
 
+export type WishDomain =
+  | 'movement'
+  | 'learning'
+  | 'writing'
+  | 'tidy'
+  | 'social'
+  | 'mental'
+  | 'generic'
+
+/** Map aspiration text to a semantic domain (Fogg: Aspiration ≠ Behavior). */
+export function classifyWishDomain(wishText: string): WishDomain {
+  const t = wishText.toLowerCase()
+  if (/运动|跑|走|健身|身体|锻炼|散步|瑜伽|拉伸|出汗/.test(t)) return 'movement'
+  if (/学|读|书|英语|技能|课程|复习|知识|听课/.test(t)) return 'learning'
+  if (/写|笔记|日记|记录|写作|备忘/.test(t)) return 'writing'
+  if (/整理|打扫|房间|桌|收纳|衣服|衣柜|叠|清洁|乱/.test(t))
+    return 'tidy'
+  if (/联系|朋友|消息|社交|聊天|家人/.test(t)) return 'social'
+  if (/精神|节奏|日常|正轨|作息|能量|精力|状态|起床|早起|焦虑|放松|平静|习惯/.test(t))
+    return 'mental'
+  return 'generic'
+}
+
+/**
+ * Grow a tiny Behavior footprint from wish semantics.
+ * NEVER default to「叠一件衣服」unless the wish is about decluttering/clothes.
+ */
+export function deriveTinyAction(wishText: string): string {
+  switch (classifyWishDomain(wishText)) {
+    case 'movement':
+      return '穿上鞋，在原地站立并深呼吸 3 次'
+    case 'learning':
+      return '打开学习材料，只看第一段标题'
+    case 'writing':
+      return '打开备忘录，写下一句今天的感受'
+    case 'tidy':
+      return '只清理桌面上一小块地方'
+    case 'social':
+      return '打开聊天框，打出一句问候（先不用发）'
+    case 'mental':
+      return '走到窗边，站立看外面 60 秒'
+    case 'generic':
+    default:
+      return '倒一杯水，喝一小口，感受一下自己还在这里'
+  }
+}
+
+export function deriveDefaultAnchor(wishText: string): string {
+  switch (classifyWishDomain(wishText)) {
+    case 'movement':
+      return '起床后'
+    case 'learning':
+      return '打开电脑后'
+    case 'writing':
+      return '坐下后'
+    case 'tidy':
+      return '进房间后'
+    case 'social':
+      return '刷完手机后'
+    case 'mental':
+      return '刷完牙后'
+    default:
+      return '喝完一口水后'
+  }
+}
+
+export function deriveDoneLooksLike(wishText: string): string {
+  switch (classifyWishDomain(wishText)) {
+    case 'movement':
+      return '你已经穿好鞋或站起来准备动了'
+    case 'learning':
+      return '学习材料已经打开在眼前'
+    case 'writing':
+      return '备忘录里多了一句话'
+    case 'tidy':
+      return '眼前有一小块地方变干净了'
+    case 'social':
+      return '问候已经打在输入框里'
+    case 'mental':
+      return '你完成了一个微小的日常动作，朝那个状态靠近了一步'
+    default:
+      return '你已经朝这个方向认真动了一下'
+  }
+}
+
 /** Max 1 confirmed wish per session */
 export function confirmWish(
   state: SessionState,
   text: string,
   doneLooksLike: string,
+  recipeOpts?: { anchor?: string; action?: string; durationMin?: number },
 ): SessionState {
   if (state.wish) return state
   if (state.phase !== 'clarifying') return state
@@ -100,7 +200,7 @@ export function confirmWish(
   let next = addMessage(
     state,
     'coach',
-    `好，愿望锁定了：\n「${wish.text}」\n完成时看起来像：${wish.doneLooksLike}\n\n接下来给你一个 ≤2 分钟的小配方——做完就算今天拉回一点点。`,
+    `好，愿望锁定了：\n「${wish.text}」\n完成时看起来像：${wish.doneLooksLike}\n\n接下来给你一个小但认真的第一步——≤2 分钟，做完就算今天朝它靠近了一点。`,
   )
 
   next = {
@@ -115,22 +215,18 @@ export function confirmWish(
     }),
   }
 
-  return issueRecipe(next, {
-    anchor: '刷完牙后',
-    action: deriveTinyAction(wish.text),
-    durationMin: 2,
-  })
-}
+  const action =
+    (recipeOpts?.action || state.draftBehavior || '').trim() ||
+    deriveTinyAction(wish.text)
+  const anchor =
+    (recipeOpts?.anchor || state.draftAnchor || '').trim() ||
+    deriveDefaultAnchor(wish.text)
 
-function deriveTinyAction(wishText: string): string {
-  const t = wishText.toLowerCase()
-  if (/运动|跑|走|健身|身体/.test(t)) return '穿上运动鞋，站在门口深呼吸 3 次'
-  if (/写|笔记|日记|记录/.test(t)) return '打开备忘录，写下一句今天的感受'
-  if (/学|读|书|英语|技能/.test(t)) return '打开学习材料，只看第一段标题'
-  if (/整理|打扫|房间|桌/.test(t)) return '只清理桌面上一小块地方'
-  if (/联系|朋友|消息/.test(t)) return '打开聊天框，打出一句问候（先不用发）'
-  if (/精神|节奏|日常|正轨|作息/.test(t)) return '走到窗边，站立看外面 60 秒'
-  return '找一件衣服叠好，放回原位'
+  return issueRecipe(next, {
+    anchor,
+    action,
+    durationMin: recipeOpts?.durationMin ?? 2,
+  })
 }
 
 export function issueRecipe(
@@ -159,7 +255,7 @@ export function issueRecipe(
     `动作：${recipe.action}`,
     `时长：约 ${recipe.durationMin} 分钟 · 难度 1`,
     '',
-    '做完点下面的「我做成了」就行。太难或卡住了，直接跟我说。',
+    '这是小但认真的第一步。做完点下面的「我做成了」就行。太难或卡住了，直接跟我说。',
   ].join('\n')
 
   let next = addMessage(state, 'coach', coachText)
@@ -240,7 +336,8 @@ export function adjustRecipe(
     supersededAt: new Date().toISOString(),
   }
 
-  const smaller = pickSmallerRecipe(active)
+  const wishText = state.wish?.text ?? state.draftWish ?? ''
+  const smaller = pickSmallerRecipe(active, wishText)
 
   let next: SessionState = {
     ...state,
@@ -255,7 +352,7 @@ export function adjustRecipe(
   next = addMessage(
     next,
     'coach',
-    `没关系，我们把配方再缩小一点（原因：${reason}）。旧的已作废。`,
+    `没关系，我们把配方再缩小一点（原因：${reason}）。旧的已作废——仍然朝着同一个愿望。`,
   )
 
   next = {
@@ -266,19 +363,53 @@ export function adjustRecipe(
   return issueRecipe(next, smaller)
 }
 
-function pickSmallerRecipe(
+/**
+ * Shrink to a still wish-related tiny action (adult tone, not childish / unrelated).
+ */
+export function pickSmallerRecipe(
   old: Recipe,
+  wishText: string,
 ): { anchor: string; action: string; durationMin: number } {
-  const options = [
-    { anchor: '喝完一口水后', action: '只深呼吸 3 次，感受脚踩在地上', durationMin: 1 },
-    { anchor: '坐下后', action: '把手机扣在桌上，闭眼数到 20', durationMin: 1 },
-    { anchor: '刷完牙后', action: '只拉开窗帘（或开一盏灯）', durationMin: 1 },
-    { anchor: '打开电脑后', action: '只打开一个空白备忘录，写上日期', durationMin: 1 },
-  ]
+  const domain = classifyWishDomain(wishText || old.action)
+  const byDomain: Record<
+    WishDomain,
+    Array<{ anchor: string; action: string; durationMin: number }>
+  > = {
+    movement: [
+      { anchor: '起床后', action: '只穿上一只鞋，站稳 10 秒', durationMin: 1 },
+      { anchor: '站起来后', action: '原地活动脚踝 5 下', durationMin: 1 },
+    ],
+    learning: [
+      { anchor: '打开电脑后', action: '只打开学习材料的封面或目录页', durationMin: 1 },
+      { anchor: '坐下后', action: '把学习材料放到眼前，看一眼标题', durationMin: 1 },
+    ],
+    writing: [
+      { anchor: '坐下后', action: '打开备忘录，只写下今天的日期', durationMin: 1 },
+      { anchor: '拿起手机后', action: '打开备忘录，光标闪一下就够', durationMin: 1 },
+    ],
+    tidy: [
+      { anchor: '进房间后', action: '只把一件东西放回原位', durationMin: 1 },
+      { anchor: '看到桌面后', action: '只挪开眼前一个物品', durationMin: 1 },
+    ],
+    social: [
+      { anchor: '刷完手机后', action: '打开聊天列表，停留 5 秒即可', durationMin: 1 },
+      { anchor: '坐下后', action: '想好一句问候，先不用发出去', durationMin: 1 },
+    ],
+    mental: [
+      { anchor: '刷完牙后', action: '走到窗边，看外面 20 秒', durationMin: 1 },
+      { anchor: '喝完一口水后', action: '站立感受脚踩在地上，数到 10', durationMin: 1 },
+    ],
+    generic: [
+      { anchor: '喝完一口水后', action: '深呼吸 3 次，感受自己还在这里', durationMin: 1 },
+      { anchor: '坐下后', action: '把手机扣在桌上，闭眼数到 10', durationMin: 1 },
+    ],
+  }
+
+  const options = byDomain[domain]
   const idx = Math.abs(old.action.length) % options.length
-  const pick = options[idx]
+  let pick = options[idx]
   if (pick.action === old.action) {
-    return options[(idx + 1) % options.length]
+    pick = options[(idx + 1) % options.length]
   }
   return pick
 }
@@ -288,7 +419,7 @@ export function endSession(state: SessionState): SessionState {
   let next = addMessage(
     state,
     'coach',
-    '好，先到这里。你已经迈出了一步。随时回来，我们继续把日子一点点拉回正轨。加油。',
+    '好，先到这里。你已经迈出了一步。随时回来，我们继续把日子一点点拉回正轨。',
   )
   next = {
     ...next,

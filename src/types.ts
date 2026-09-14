@@ -54,14 +54,15 @@ export interface SessionState {
   clarifyingStep: ClarifyingStep
   draftWish: string
   draftDoneLooksLike: string
+  /** User utterances while in exploring */
+  exploreUserTurns: number
+  /** Tiny action footprint grown from the wish (Fogg Behavior, not Aspiration) */
+  draftBehavior: string
+  draftAnchor: string
 }
 
-export type ClarifyingStep =
-  | 'opening'
-  | 'awaiting_direction'
-  | 'refining'
-  | 'confirming'
-  | 'done'
+/** clarifying sub-steps: wishing → exploring → confirming → done */
+export type ClarifyingStep = 'wishing' | 'exploring' | 'confirming' | 'done'
 
 export const CELEBRATION_COPY = '今天，你把这件小事做成了。'
 
