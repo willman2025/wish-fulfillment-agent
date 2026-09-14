@@ -103,20 +103,34 @@ export type WishDomain =
   | 'tidy'
   | 'social'
   | 'mental'
+  | 'venture'
   | 'generic'
 
 /** Map aspiration text to a semantic domain (Fogg: Aspiration ≠ Behavior). */
 export function classifyWishDomain(wishText: string): WishDomain {
   const t = wishText.toLowerCase()
+  // Side hustle / business / income first — before social「家人」false positives
+  if (
+    /副业|生意|创业|客户|成交|变现|赚钱|收入|生意|店铺|电商|接单|自由职业|独立|产品|服务|报价|方案|内容账号|自媒体|咨询/.test(
+      t,
+    )
+  ) {
+    return 'venture'
+  }
   if (/运动|跑|走|健身|身体|锻炼|散步|瑜伽|拉伸|出汗/.test(t)) return 'movement'
   if (/学|读|书|英语|技能|课程|复习|知识|听课/.test(t)) return 'learning'
   if (/写|笔记|日记|记录|写作|备忘/.test(t)) return 'writing'
   if (/整理|打扫|房间|桌|收纳|衣服|衣柜|叠|清洁|乱/.test(t))
     return 'tidy'
-  if (/联系|朋友|消息|社交|聊天|家人/.test(t)) return 'social'
+  if (/联系|朋友|消息|社交|聊天/.test(t)) return 'social'
   if (/精神|节奏|日常|正轨|作息|能量|精力|状态|起床|早起|焦虑|放松|平静|习惯/.test(t))
     return 'mental'
   return 'generic'
+}
+
+/** True if action looks like a meaningless filler (must never ship for real wishes). */
+export function isFillerAction(action: string): boolean {
+  return /喝一小口|倒一杯水|感受一下自己还在这里|叠一件衣服/.test(action)
 }
 
 /**
@@ -125,6 +139,8 @@ export function classifyWishDomain(wishText: string): WishDomain {
  */
 export function deriveTinyAction(wishText: string): string {
   switch (classifyWishDomain(wishText)) {
+    case 'venture':
+      return '打开备忘录，用一行字写下「副业下一步：______」（先填一个具体动作名）'
     case 'movement':
       return '穿上鞋，在原地站立并深呼吸 3 次'
     case 'learning':
@@ -139,12 +155,15 @@ export function deriveTinyAction(wishText: string): string {
       return '走到窗边，站立看外面 60 秒'
     case 'generic':
     default:
-      return '倒一杯水，喝一小口，感受一下自己还在这里'
+      // Never ship ritual filler — always echo the aspiration as a named next step
+      return '打开备忘录，用一行字写下「为这个愿望，我今天最小的一步是：______」'
   }
 }
 
 export function deriveDefaultAnchor(wishText: string): string {
   switch (classifyWishDomain(wishText)) {
+    case 'venture':
+      return '打开电脑后'
     case 'movement':
       return '起床后'
     case 'learning':
@@ -158,12 +177,14 @@ export function deriveDefaultAnchor(wishText: string): string {
     case 'mental':
       return '刷完牙后'
     default:
-      return '喝完一口水后'
+      return '坐下后'
   }
 }
 
 export function deriveDoneLooksLike(wishText: string): string {
   switch (classifyWishDomain(wishText)) {
+    case 'venture':
+      return '备忘录里已经写下副业的下一个具体动作名'
     case 'movement':
       return '你已经穿好鞋或站起来准备动了'
     case 'learning':
@@ -177,7 +198,34 @@ export function deriveDoneLooksLike(wishText: string): string {
     case 'mental':
       return '你完成了一个微小的日常动作，朝那个状态靠近了一步'
     default:
-      return '你已经朝这个方向认真动了一下'
+      return '你已经写下朝这个愿望迈出的最小一步'
+  }
+}
+
+/** Offer 2–3 wish-related micro-steps when user is stuck (Fogg swarm, tiny). */
+export function suggestBehaviorOptions(wishText: string): string[] {
+  switch (classifyWishDomain(wishText)) {
+    case 'venture':
+      return [
+        '打开备忘录，写下一句：我的副业想帮谁解决什么问题',
+        '打开备忘录，列出一个我已经会的、可能能卖的技能',
+        '打开聊天框，起草一条询问「你愿不愿听听我在做的事」（先不发送）',
+      ]
+    case 'movement':
+      return [
+        '穿上鞋，在原地站立并深呼吸 3 次',
+        '走到门口，做 10 次原地踏步',
+      ]
+    case 'learning':
+      return [
+        '打开学习材料，只看第一段标题',
+        '打开备忘录，写下今天只学的一个小点',
+      ]
+    default:
+      return [
+        '打开备忘录，用一行字写下「为这个愿望，我今天最小的一步是：______」',
+        '打开备忘录，写下这件事对你重要的一个原因',
+      ]
   }
 }
 
@@ -397,11 +445,15 @@ export function pickSmallerRecipe(
     ],
     mental: [
       { anchor: '刷完牙后', action: '走到窗边，看外面 20 秒', durationMin: 1 },
-      { anchor: '喝完一口水后', action: '站立感受脚踩在地上，数到 10', durationMin: 1 },
+      { anchor: '坐下后', action: '站立感受脚踩在地上，数到 10', durationMin: 1 },
+    ],
+    venture: [
+      { anchor: '打开电脑后', action: '打开备忘录，只写下副业想帮谁', durationMin: 1 },
+      { anchor: '坐下后', action: '打开备忘录，列出一个可能能卖的技能名', durationMin: 1 },
     ],
     generic: [
-      { anchor: '喝完一口水后', action: '深呼吸 3 次，感受自己还在这里', durationMin: 1 },
-      { anchor: '坐下后', action: '把手机扣在桌上，闭眼数到 10', durationMin: 1 },
+      { anchor: '坐下后', action: '打开备忘录，写下「今天最小的一步是：______」', durationMin: 1 },
+      { anchor: '打开手机后', action: '打开备忘录，写下这个愿望对你重要的一个原因', durationMin: 1 },
     ],
   }
 

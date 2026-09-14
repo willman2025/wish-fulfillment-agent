@@ -8,6 +8,8 @@ import {
   deriveDoneLooksLike,
   deriveTinyAction,
   endSession,
+  isFillerAction,
+  suggestBehaviorOptions,
 } from '../state/session'
 
 /** Detect adjust intent: 太难 / 没做成 / 卡住 / 想换 */
@@ -50,6 +52,23 @@ function lightCleanWish(raw: string): string {
   if (cleaned.length > 48) cleaned = cleaned.slice(0, 48)
   if (!cleaned.startsWith('想')) cleaned = `想${cleaned}`
   return cleaned
+}
+
+
+function classifyHint(text: string): 'venture' | 'other' {
+  return /副业|生意|创业|收入|赚钱|客户|变现|事业/.test(text)
+    ? 'venture'
+    : 'other'
+}
+
+function detectDontKnow(text: string): boolean {
+  return /不知道|不清楚|没想好|随便|你定|你说/.test(text.trim())
+}
+
+function detectWeakRecipeComplaint(text: string): boolean {
+  return /太简单|太蠢|傻瓜|没关系|没有关系|看不出来|不相关|也太|有啥关系|小儿科|无聊/.test(
+    text,
+  )
 }
 
 function looksLikeRewriteAspiration(text: string): boolean {
@@ -95,28 +114,42 @@ function growDraftsFromUtterance(
     }
   }
 
-  if (!draftBehavior) {
-    draftBehavior = deriveTinyAction(combined)
+  const nextFromWish = deriveTinyAction(combined)
+  if (!draftBehavior || isFillerAction(draftBehavior)) {
+    draftBehavior = nextFromWish
+  } else if (
+    classifyHint(combined) === 'venture' &&
+    isFillerAction(draftBehavior)
+  ) {
+    draftBehavior = nextFromWish
   }
-  if (!draftAnchor) {
-    // Capture anchor phrases if user mentions routine
+  // If user elaborated business/income meaning, refresh toward venture action
+  if (
+    /副业|生意|创业|收入|赚钱|客户|变现|事业/.test(combined) &&
+    (isFillerAction(draftBehavior) || /喝|水|窗边|叠/.test(draftBehavior))
+  ) {
+    draftBehavior = deriveTinyAction(combined)
+    draftAnchor = deriveDefaultAnchor(combined)
+    draftDoneLooksLike = deriveDoneLooksLike(combined)
+  }
+
+  if (!draftAnchor || /喝完一口水后/.test(draftAnchor)) {
     const anchorMatch = text.match(
       /(刷完牙后|起床后|坐下后|打开电脑后|喝完.*后|进门后|吃完.*后)/,
     )
     draftAnchor = anchorMatch?.[1] ?? deriveDefaultAnchor(combined)
   }
-  if (!draftDoneLooksLike) {
+  if (!draftDoneLooksLike || /朝这个方向认真动了一下/.test(draftDoneLooksLike)) {
     draftDoneLooksLike = deriveDoneLooksLike(combined)
   }
 
-  // Refine wish wording if user elaborates meaning
   let nextWish = draftWish
-  if (text.length > 4 && text.length < 60 && /想|希望|变得|重新|有点/.test(text)) {
-    if (!state.draftWish || text.length > state.draftWish.length) {
-      // Soft update only when exploring elaborates
-      if (/精神|运动|学|整理|写|联系|节奏|作息|能量/.test(text)) {
-        nextWish = lightCleanWish(text)
-      }
+  if (text.length > 4 && text.length < 80 && /想|希望|变得|重新|有点|事业|收入|副业/.test(text)) {
+    if (/副业|事业|收入|赚钱|创业|客户/.test(text)) {
+      // Keep original aspiration short; meaning stays in exploration
+      nextWish = state.draftWish || lightCleanWish(text)
+    } else if (/精神|运动|学|整理|写|联系|节奏|作息|能量/.test(text)) {
+      nextWish = lightCleanWish(text)
     }
   }
 
@@ -228,8 +261,27 @@ function handleClarifying(state: SessionState, text: string): SessionState {
       ...drafts,
     }
 
+    // User stuck naming a step — offer wish-related options (Fogg swarm), stay exploring
+    if (detectDontKnow(text)) {
+      const opts = suggestBehaviorOptions(drafts.draftWish || text)
+      const lines = opts.map((o, i) => `${i + 1}. ${o}`).join('\n')
+      next = {
+        ...next,
+        draftBehavior: '',
+        draftAnchor: deriveDefaultAnchor(drafts.draftWish),
+      }
+      next = addMessage(
+        next,
+        'coach',
+        `没关系，想不起来很正常。朝「${drafts.draftWish}」靠近，下面哪一件你稍微愿意试？（回序号或用自己的话说）\n\n${lines}\n\n都不要的话，告诉我你副业/这件事里「已经会一点」的是什么。`,
+      )
+      return next
+    }
+
     const concrete = Boolean(
-      drafts.draftWish.trim() && drafts.draftBehavior.trim(),
+      drafts.draftWish.trim() &&
+        drafts.draftBehavior.trim() &&
+        !isFillerAction(drafts.draftBehavior),
     )
     const userStillExploring =
       /还没想好|再说说|不确定|继续聊|再想想|为什么|感觉/.test(text) &&
@@ -237,6 +289,7 @@ function handleClarifying(state: SessionState, text: string): SessionState {
       !detectWantToDoIntent(text)
 
     // Hard gate: before 2 turns, stay exploring — never confirmWish
+    // Also never propose filler actions
     if (
       exploreUserTurns < 2 ||
       !concrete ||
@@ -244,8 +297,10 @@ function handleClarifying(state: SessionState, text: string): SessionState {
     ) {
       const coachReply =
         exploreUserTurns === 1
-          ? `嗯，我听到了。\n\n如果把它再往「能动手」的方向收一点：你愿意先从哪个很小的动作试一下？比如跟「${drafts.draftWish}」有关的、一两分钟内能做完的那种。也可以继续说说你在意什么。`
-          : `慢慢清楚了。朝「${drafts.draftWish}」靠近时，一个小但认真的起点可以是：\n\n锚点：${drafts.draftAnchor}\n动作：${drafts.draftBehavior}\n\n你还想再改改，还是我们已经摸到你「想去做」的那个点了？`
+          ? `嗯，我听到了——这事对你很重要。\n\n先不谈大目标。为了「${drafts.draftWish}」，你愿意先从哪个很小、但真的跟它有关的动作试一下？一两分钟能做完就行。也可以说你已经会什么、想靠什么赚钱。`
+          : isFillerAction(drafts.draftBehavior)
+            ? `我们还差一个「贴着愿望」的小动作。你更想先写清副业方向、列一个能卖的技能，还是起草一条给潜在客户的消息？`
+            : `慢慢清楚了。朝「${drafts.draftWish}」靠近时，一个小但认真的起点可以是：\n\n锚点：${drafts.draftAnchor}\n动作：${drafts.draftBehavior}\n\n你还想再改改，还是已经想去做了？`
 
       next = addMessage(next, 'coach', coachReply)
       return next
@@ -321,24 +376,54 @@ function handleClarifying(state: SessionState, text: string): SessionState {
       })
     }
 
+    // User says step is dumb / unrelated — back to exploring with real options
+    if (detectWeakRecipeComplaint(text) || isFillerAction(state.draftBehavior)) {
+      const opts = suggestBehaviorOptions(state.draftWish)
+      const lines = opts.map((o, i) => `${i + 1}. ${o}`).join('\n')
+      let next: SessionState = {
+        ...state,
+        clarifyingStep: 'exploring',
+        draftBehavior: '',
+        draftAnchor: deriveDefaultAnchor(state.draftWish),
+        draftDoneLooksLike: deriveDoneLooksLike(state.draftWish),
+      }
+      next = addMessage(
+        next,
+        'coach',
+        `你说得对——刚才那步不够认真，也没贴上「${state.draftWish}」。\n\n按 Tiny Habits，小步也必须朝愿望走。下面选一个你稍微愿意做的（回序号），或用自己的话说一个两分钟内能做完的动作：\n\n${lines}`,
+      )
+      return next
+    }
+
     // User rewrote details — stay confirming, update drafts
     const drafts = growDraftsFromUtterance(state, text)
-    // If they named a new wish-like sentence, update wish
     let draftWish = drafts.draftWish
     if (text.length > 2 && text.length < 48 && /想/.test(text)) {
       draftWish = lightCleanWish(text)
     }
+    let behavior =
+      drafts.draftBehavior || deriveTinyAction(draftWish)
+    if (isFillerAction(behavior)) {
+      behavior = deriveTinyAction(draftWish)
+    }
+    // Numbered choice
+    const num = text.trim().match(/^[1-3]$/)
+    if (num) {
+      const opts = suggestBehaviorOptions(draftWish)
+      const picked = opts[Number(num[0]) - 1]
+      if (picked) behavior = picked
+    }
     let next: SessionState = {
       ...state,
       draftWish,
-      draftDoneLooksLike: drafts.draftDoneLooksLike,
-      draftBehavior: drafts.draftBehavior || deriveTinyAction(draftWish),
+      draftDoneLooksLike: deriveDoneLooksLike(draftWish),
+      draftBehavior: behavior,
       draftAnchor: drafts.draftAnchor || deriveDefaultAnchor(draftWish),
     }
     next = addMessage(
       next,
       'coach',
-      `收到，先改成：\n\n愿望：${next.draftWish}\n小步骤：${next.draftAnchor}，${next.draftBehavior}\n\n若就是这个、想去做，回「想去做」；继续改也行。`,
+      `收到，改成贴着愿望的一步：\n\n愿望：${next.draftWish}\n小步骤：${next.draftAnchor}，${next.draftBehavior}\n\n若就是这个、想去做，回「想去做」；继续改也行。`,
     )
     return next
   }
