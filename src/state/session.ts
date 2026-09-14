@@ -117,7 +117,7 @@ export function classifyWishDomain(wishText: string): WishDomain {
   ) {
     return 'venture'
   }
-  if (/运动|跑|走|健身|身体|锻炼|散步|瑜伽|拉伸|出汗/.test(t)) return 'movement'
+  if (/运动|跑|走|健身|身体|锻炼|散步|瑜伽|拉伸|出汗|动起来|动一动|活动一下|起来动/.test(t)) return 'movement'
   if (/学|读|书|英语|技能|课程|复习|知识|听课/.test(t)) return 'learning'
   if (/写|笔记|日记|记录|写作|备忘/.test(t)) return 'writing'
   if (/整理|打扫|房间|桌|收纳|衣服|衣柜|叠|清洁|乱/.test(t))
@@ -426,6 +426,8 @@ export function pickSmallerRecipe(
     movement: [
       { anchor: '起床后', action: '只穿上一只鞋，站稳 10 秒', durationMin: 1 },
       { anchor: '站起来后', action: '原地活动脚踝 5 下', durationMin: 1 },
+      { anchor: '刷完牙后', action: '走到门口，来回走 4 步', durationMin: 1 },
+      { anchor: '坐下久了之后', action: '站起来伸展双臂，停 5 秒', durationMin: 1 },
     ],
     learning: [
       { anchor: '打开电脑后', action: '只打开学习材料的封面或目录页', durationMin: 1 },

@@ -300,7 +300,7 @@ function handleClarifying(state: SessionState, text: string): SessionState {
           ? `嗯，我听到了——这事对你很重要。\n\n先不谈大目标。为了「${drafts.draftWish}」，你愿意先从哪个很小、但真的跟它有关的动作试一下？一两分钟能做完就行。也可以说你已经会什么、想靠什么赚钱。`
           : isFillerAction(drafts.draftBehavior)
             ? `我们还差一个「贴着愿望」的小动作。你更想先写清副业方向、列一个能卖的技能，还是起草一条给潜在客户的消息？`
-            : `慢慢清楚了。朝「${drafts.draftWish}」靠近时，一个小但认真的起点可以是：\n\n锚点：${drafts.draftAnchor}\n动作：${drafts.draftBehavior}\n\n你还想再改改，还是已经想去做了？`
+            : `慢慢清楚了。朝「${drafts.draftWish}」——我听到这对你为什么重要，也摸到你愿意从很小处动手。\n\n先不给你具体步骤。若你觉得「就是这个愿望、现在想去做」，回我「想去做」或「就是这个」；还想再聊聊也行。`
 
       next = addMessage(next, 'coach', coachReply)
       return next
@@ -314,7 +314,7 @@ function handleClarifying(state: SessionState, text: string): SessionState {
     next = addMessage(
       next,
       'coach',
-      `我把它收成这样，请你看一眼：\n\n愿望：${drafts.draftWish}\n完成时看起来像：${drafts.draftDoneLooksLike}\n小但认真的第一步：${drafts.draftAnchor}，${drafts.draftBehavior}\n\n如果就是这个、你想去做，回我「想去做」或「就是这个」。想改就直接说怎么改。`,
+      `我把它收成这样，请你看一眼：\n\n愿望：${drafts.draftWish}\n对你重要的地方：${drafts.draftDoneLooksLike}\n\n我还没有给你可执行步骤。如果就是这个、你现在想去做，回我「想去做」或「就是这个」——确认之后我再给你一个小但认真的第一步。想改愿望就直接说。`,
     )
     return next
   }
@@ -423,7 +423,7 @@ function handleClarifying(state: SessionState, text: string): SessionState {
     next = addMessage(
       next,
       'coach',
-      `收到，改成贴着愿望的一步：\n\n愿望：${next.draftWish}\n小步骤：${next.draftAnchor}，${next.draftBehavior}\n\n若就是这个、想去做，回「想去做」；继续改也行。`,
+      `收到，愿望这边我记下了：\n\n「${next.draftWish}」\n\n仍然先不给你具体步骤。若就是这个、现在想去做，回「想去做」；继续改愿望或再说说能力边界也行。`,
     )
     return next
   }
