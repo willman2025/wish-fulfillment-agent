@@ -1,51 +1,54 @@
-import { createServer } from 'node:http'
-import { handleChat } from './agent/loop.js'
-import { _readPromptForSmoke } from './agent/loop.js'
+import express from 'express'
+import cors from 'cors'
+import { createLlm } from './llm'
+import { runTurn } from './orchestrator'
 
-const port = Number(process.env.PORT || 8787)
+const app = express()
+app.use(cors())
+app.use(express.json())
 
-const server = createServer(async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Headers', 'content-type')
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204)
-    res.end()
-    return
-  }
-
-  if (req.method === 'GET' && req.url === '/health') {
-    let promptOk = false
-    try {
-      promptOk = _readPromptForSmoke().includes('Knowledge Cards')
-    } catch {
-      promptOk = false
-    }
-    res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, mock: true, promptOk }))
-    return
-  }
-
-  if (req.method === 'POST' && req.url === '/chat') {
-    const chunks: Buffer[] = []
-    for await (const c of req) chunks.push(c as Buffer)
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
-    const sessionId = String(body.sessionId || 'default')
-    const text = String(body.text || '')
-    try {
-      const out = await handleChat(sessionId, text)
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify(out))
-    } catch (e) {
-      res.writeHead(500, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ error: String(e) }))
-    }
-    return
-  }
-
-  res.writeHead(404)
-  res.end('not found')
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, service: 'wish-agent-server', loop: 'Perceive-Reason-Act-Observe' })
 })
 
-server.listen(port, () => {
-  console.log(`wish-agent server mock on :${port}`)
+async function handleTurn(req: any, res: any) {
+  try {
+    const body = req.body as { sessionId?: string; message?: string; text?: string }
+    const sessionId = body.sessionId
+    const message = body.message || body.text
+    if (!message || typeof message !== 'string') {
+      res.status(400).json({ error: 'message or text required' })
+      return
+    }
+    const llm = createLlm()
+    const result = await runTurn(llm, { sessionId, message })
+    res.json({
+      sessionId: result.sessionId,
+      utterance: result.utterance,
+      rejected: result.rejected,
+      state: {
+        phase: result.state.phase,
+        clarifyingStep: result.state.clarifyingStep,
+        wish: result.state.wish,
+        recipes: result.state.recipes,
+        activeRecipeId: result.state.activeRecipeId,
+        wantToDo: result.state.wantToDo,
+        exploreUserTurns: result.state.exploreUserTurns,
+        draftWish: result.state.draftWish,
+        events: result.state.events.slice(-8),
+      },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+}
+
+app.post('/api/turn', handleTurn)
+app.post('/api/chat', handleTurn)
+app.post('/chat', handleTurn)
+
+const PORT = Number(process.env.PORT ?? 3001)
+app.listen(PORT, () => {
+  console.log(`wish-agent-server listening on :${PORT} (mock LLM unless LLM_API_KEY set)`)
 })

@@ -1,19 +1,21 @@
 {
-  "name": "wish-fulfillment-agent-server",
-  "private": true,
-  "version": "0.1.0",
+  "name": "wish-agent-server",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
-    "smoke": "tsx src/eval/gateFive.ts"
+    "dev": "tsx src/index.ts",
+    "demo": "tsx scripts/demo.ts",
+    "test": "tsx scripts/demo.ts"
   },
   "dependencies": {
-    "zod": "^3.23.8"
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
   },
   "devDependencies": {
-    "tsx": "^4.19.2",
-    "typescript": "~5.6.3",
-    "@types/node": "^22.10.0"
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
   }
 }
